@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
-	"time"
+	"os"
 
+	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/firestore"
 	"github.com/alexandrevicenzi/go-sse"
+	"google.golang.org/api/option"
 )
 
 var projectID string
@@ -26,33 +29,54 @@ func init() {
 
 func main() {
 	// Create SSE server
-	s := sse.NewServer(nil)
+	s := sse.NewServer(&sse.Options{
+		Headers: map[string]string{
+			"Access-Control-Allow-Origin": "*",
+			"Access-Control-Allow-Methods": "*",
+		},
+	})
 	defer s.Shutdown()
 
+	
 	// Configure the route
+	// r := mux.NewRouter()
+	// r.Use(mux.CORSMethodMiddleware(r))
+	// r.Use(func(handler http.Handler) http.Handler {
+	// 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// 		w.Header().Set("Access-Control-Allow-Origin", "*")
+	// 		w.Header().Set("Access-Control-Allow-Methods", "*")
+	// 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	// 		w.Header().Set("X-XSS-Protection", "1; mode=block")
+	// 		w.Header().Set("X-Frame-Options", "DENY")
+	// 		w.Header().Set("Strict-Transport-Security", "max-age=604800; includeSubDomains; preload")
+	// 		handler.ServeHTTP(w, r)
+	// 	})
+	// })
+	// r.Handle("/events", s)
 	http.Handle("/events", s)
 
-	chMsg := make(chan string)
+	chMsg := make(chan map[string]interface{})
 	
-	// Send messages every 5 seconds
 	go func() {
 		for {
-			s.SendMessage("/events/patient", sse.SimpleMessage(<-chMsg)
+			m := <-chMsg
+			fmt.Println(m)
+			s.SendMessage("", sse.SimpleMessage(m))
 		}
 	}()
-
+	
 	go watching(chMsg)
 
 	log.Println("Listening at :3000")
 	http.ListenAndServe(":3000", nil)
 }
 
-func watching(chMsg chan string) {
+func watching(chMsg chan map[string]interface{}) {
 	var fsClient *firestore.Client
+	ctx := context.Background()
 	var err error
 	{
 		opt := option.WithCredentialsFile("configs/firebase-credentials.json")
-		ctx := context.Background()
 		fsClient, err = firestore.NewClient(ctx, projectID, opt)
 		if err != nil {
 			log.Fatalf("Failed to create client: %v", err)
@@ -60,14 +84,14 @@ func watching(chMsg chan string) {
 	}
 	defer fsClient.Close()
 
-	iter := fsClient.Doc("patientData/{ID}").Snapshots(ctx)
+	iter := fsClient.Doc("patientData/FQdMC7APoo5wxL4GBqlm").Snapshots(ctx)
 	defer iter.Stop()
 	for {
 		docsnap, err := iter.Next()
 		if err != nil {
 			log.Println("error", err)
 		}
-		_ = docsnap // TODO: Use DocumentSnapshot.
-		chMsg <- "updated"
+		fmt.Println(docsnap.Data())			
+		chMsg <- docsnap.Data()
 	}
 }
