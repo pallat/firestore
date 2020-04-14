@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -31,13 +32,12 @@ func main() {
 	// Create SSE server
 	s := sse.NewServer(&sse.Options{
 		Headers: map[string]string{
-			"Access-Control-Allow-Origin": "*",
+			"Access-Control-Allow-Origin":  "*",
 			"Access-Control-Allow-Methods": "*",
 		},
 	})
 	defer s.Shutdown()
 
-	
 	// Configure the route
 	// r := mux.NewRouter()
 	// r.Use(mux.CORSMethodMiddleware(r))
@@ -56,15 +56,21 @@ func main() {
 	http.Handle("/events", s)
 
 	chMsg := make(chan map[string]interface{})
-	
+
 	go func() {
 		for {
 			m := <-chMsg
-			fmt.Println(m)
-			s.SendMessage("", sse.SimpleMessage(m))
+
+			b, err := json.Marshal(&m)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+
+			s.SendMessage("", sse.SimpleMessage(string(b)))
 		}
 	}()
-	
+
 	go watching(chMsg)
 
 	log.Println("Listening at :3000")
@@ -91,7 +97,7 @@ func watching(chMsg chan map[string]interface{}) {
 		if err != nil {
 			log.Println("error", err)
 		}
-		fmt.Println(docsnap.Data())			
+		fmt.Println(docsnap.Data())
 		chMsg <- docsnap.Data()
 	}
 }
